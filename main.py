@@ -115,17 +115,30 @@ class CalendarService:
             now = datetime.now()
             end_date = now + timedelta(days=days_ahead)
             
-            logger.debug(f"Поиск событий с {now} по {end_date}")
+            logger.debug(f"Поиск событий с {now} по {end_date} в календаре '{calendar.name}'")
             
             # Получаем события из календаря
-            # Используем date() для правильного формата даты
-            events = calendar.search(
-                start=now.date(),
-                end=end_date.date(),
-                event=True
-            )
+            # Пробуем разные форматы даты
+            try:
+                events = calendar.search(
+                    start=now,
+                    end=end_date,
+                    event=True
+                )
+            except Exception as e1:
+                logger.debug(f"Попытка 1 не удалась: {e1}, пробуем с date()")
+                try:
+                    events = calendar.search(
+                        start=now.date(),
+                        end=end_date.date(),
+                        event=True
+                    )
+                except Exception as e2:
+                    logger.debug(f"Попытка 2 не удалась: {e2}, пробуем без параметров")
+                    # Пробуем получить все события и фильтровать вручную
+                    events = calendar.events()
             
-            logger.debug(f"Получено {len(events)} событий из календаря")
+            logger.debug(f"Получено {len(events)} событий из календаря '{calendar.name}'")
             
             parsed_events = []
             for idx, event in enumerate(events):
@@ -155,6 +168,33 @@ class CalendarService:
             
         except Exception as e:
             logger.error(f"Ошибка при получении событий: {e}", exc_info=True)
+            return []
+    
+    @staticmethod
+    def get_events_from_all_calendars(client, days_ahead: int = 7) -> List[ICSEvent]:
+        """Получает события из всех календарей (кроме Напоминаний)"""
+        try:
+            principal = client.principal()
+            calendars = principal.calendars()
+            
+            all_events = []
+            for calendar in calendars:
+                cal_name_lower = calendar.name.lower()
+                # Пропускаем календари с напоминаниями
+                if 'напоминания' in cal_name_lower or 'reminders' in cal_name_lower:
+                    continue
+                
+                events = CalendarService.get_events(calendar, days_ahead)
+                all_events.extend(events)
+            
+            # Сортируем все события по времени
+            all_events.sort(key=lambda x: x.begin.datetime)
+            logger.info(f"Всего найдено {len(all_events)} событий из всех календарей")
+            
+            return all_events
+            
+        except Exception as e:
+            logger.error(f"Ошибка при получении событий из всех календарей: {e}")
             return []
     
     @staticmethod
@@ -405,8 +445,8 @@ async def get_next_events(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user.icloud_password
         )
         
-        # Получаем события
-        events = CalendarService.get_events(calendar, days_ahead=30)
+        # Получаем события из всех календарей (кроме Напоминаний)
+        events = CalendarService.get_events_from_all_calendars(client, days_ahead=30)
         
         if not events:
             message = "Событий не найдено."
