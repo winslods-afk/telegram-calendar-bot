@@ -151,11 +151,36 @@ class CalendarService:
                     
                     calendar_obj = Calendar(ics_data)
                     for ics_event in calendar_obj.events:
-                        # Проверяем, что событие в нужном диапазоне дат
-                        event_start = ics_event.begin.datetime
-                        if event_start >= now and event_start <= end_date:
-                            parsed_events.append(ics_event)
-                            logger.debug(f"Добавлено событие: {ics_event.name} на {event_start}")
+                        try:
+                            # Проверяем, что событие в нужном диапазоне дат
+                            event_start = ics_event.begin.datetime
+                            
+                            # Приводим к одному формату (timezone-aware)
+                            if event_start.tzinfo is None:
+                                # Если событие без timezone, считаем что оно в локальном времени
+                                from datetime import timezone
+                                event_start = event_start.replace(tzinfo=timezone.utc)
+                            
+                            # Приводим now и end_date к timezone-aware если нужно
+                            if now.tzinfo is None:
+                                from datetime import timezone
+                                now_tz = now.replace(tzinfo=timezone.utc)
+                            else:
+                                now_tz = now
+                            
+                            if end_date.tzinfo is None:
+                                from datetime import timezone
+                                end_date_tz = end_date.replace(tzinfo=timezone.utc)
+                            else:
+                                end_date_tz = end_date
+                            
+                            # Сравниваем даты
+                            if event_start >= now_tz and event_start <= end_date_tz:
+                                parsed_events.append(ics_event)
+                                logger.debug(f"Добавлено событие: {ics_event.name} на {event_start}")
+                        except Exception as e:
+                            logger.warning(f"Ошибка при обработке события {ics_event.name}: {e}")
+                            continue
                 except Exception as e:
                     logger.warning(f"Ошибка при парсинге события {idx}: {e}")
                     continue
