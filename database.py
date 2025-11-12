@@ -54,28 +54,61 @@ class Database:
     
     def __init__(self):
         # Получаем параметры подключения из переменных окружения
-        db_host = os.getenv('DB_HOST', 'localhost')
-        db_port = os.getenv('DB_PORT', '5432')
-        db_name = os.getenv('DB_NAME', 'calendar_bot')
-        db_user = os.getenv('DB_USER', 'postgres')
-        db_password = os.getenv('DB_PASSWORD', 'postgres')
+        # Поддерживаем DATABASE_URL (стандарт для многих платформ) или отдельные переменные
+        database_url = os.getenv('DATABASE_URL')
         
-        database_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+        if not database_url:
+            # Если DATABASE_URL не указан, собираем из отдельных переменных
+            db_host = os.getenv('DB_HOST', 'localhost')
+            db_port = os.getenv('DB_PORT', '5432')
+            db_name = os.getenv('DB_NAME', 'calendar_bot')
+            db_user = os.getenv('DB_USER', 'postgres')
+            db_password = os.getenv('DB_PASSWORD', 'postgres')
+            
+            # Если пароль содержит специальные символы, нужно их экранировать
+            from urllib.parse import quote_plus
+            db_password_encoded = quote_plus(db_password)
+            
+            database_url = f"postgresql://{db_user}:{db_password_encoded}@{db_host}:{db_port}/{db_name}"
         
-        self.engine = create_engine(database_url, echo=False)
+        # Если DATABASE_URL начинается с postgres://, меняем на postgresql://
+        if database_url.startswith('postgres://'):
+            database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        
+        logger.info(f"Подключение к БД: {database_url.split('@')[1] if '@' in database_url else 'скрыто'}")
+        
+        self.engine = create_engine(
+            database_url, 
+            echo=False,
+            pool_pre_ping=True,  # Проверяет соединение перед использованием
+            pool_recycle=3600    # Переподключается каждый час
+        )
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
         
-        # Создаем таблицы
+        # Создаем таблицы (с повторными попытками)
         self.create_tables()
     
     def create_tables(self):
         """Создает таблицы в БД"""
-        try:
-            Base.metadata.create_all(bind=self.engine)
-            logger.info("Таблицы БД созданы/проверены")
-        except Exception as e:
-            logger.error(f"Ошибка при создании таблиц: {e}")
-            raise
+        max_retries = 3
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                Base.metadata.create_all(bind=self.engine)
+                logger.info("Таблицы БД созданы/проверены")
+                return
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Попытка {attempt + 1}/{max_retries} подключения к БД не удалась: {e}")
+                    import time
+                    time.sleep(retry_delay)
+                else:
+                    logger.error(f"Ошибка при создании таблиц после {max_retries} попыток: {e}")
+                    logger.error("Проверьте настройки подключения к БД в переменных окружения:")
+                    logger.error("- DATABASE_URL (полный URL) или")
+                    logger.error("- DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD")
+                    raise
     
     def get_session(self) -> Session:
         """Возвращает сессию БД"""
