@@ -188,8 +188,15 @@ class CalendarService:
                     logger.warning(f"Ошибка при парсинге события {idx}: {e}")
                     continue
             
-            # Сортируем по времени начала
-            parsed_events.sort(key=lambda x: x.begin.datetime)
+            # Сортируем по времени начала (безопасное сравнение с timezone)
+            def safe_sort_key(event):
+                dt = event.begin.datetime
+                if dt.tzinfo is None:
+                    from datetime import timezone
+                    return dt.replace(tzinfo=timezone.utc)
+                return dt
+            
+            parsed_events.sort(key=safe_sort_key)
             logger.info(f"Найдено {len(parsed_events)} событий на ближайшие {days_ahead} дней в календаре '{calendar.name}'")
             
             return parsed_events
@@ -215,8 +222,15 @@ class CalendarService:
                 events = CalendarService.get_events(calendar, days_ahead)
                 all_events.extend(events)
             
-            # Сортируем все события по времени
-            all_events.sort(key=lambda x: x.begin.datetime)
+            # Сортируем все события по времени (безопасное сравнение с timezone)
+            def safe_sort_key(event):
+                dt = event.begin.datetime
+                if dt.tzinfo is None:
+                    from datetime import timezone
+                    return dt.replace(tzinfo=timezone.utc)
+                return dt
+            
+            all_events.sort(key=safe_sort_key)
             logger.info(f"Всего найдено {len(all_events)} событий из всех календарей")
             
             return all_events
@@ -479,8 +493,23 @@ async def get_next_events(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not events:
             message = "Событий не найдено."
         else:
-            # Берем ближайшие 3 события
-            upcoming_events = [e for e in events if e.begin.datetime > datetime.now()][:3]
+            # Берем ближайшие 3 события (безопасное сравнение с timezone)
+            now = datetime.now()
+            from datetime import timezone
+            if now.tzinfo is None:
+                now_tz = now.replace(tzinfo=timezone.utc)
+            else:
+                now_tz = now
+            
+            upcoming_events = []
+            for e in events:
+                event_dt = e.begin.datetime
+                if event_dt.tzinfo is None:
+                    event_dt = event_dt.replace(tzinfo=timezone.utc)
+                if event_dt > now_tz:
+                    upcoming_events.append(e)
+                    if len(upcoming_events) >= 3:
+                        break
             
             if not upcoming_events:
                 message = "Ближайших событий не найдено."
@@ -531,12 +560,18 @@ async def check_events_for_user(user: User, application: Application):
             event_id = CalendarService.get_event_id(event)
             
             # Проверяем, было ли событие уже отправлено
-            if not db.is_event_sent(user.id, event_id):
-                # Проверяем, что событие еще не началось или началось недавно
-                start_time = event.begin.datetime
-                time_diff = start_time - datetime.now()
-                if time_diff.total_seconds() > -3600:  # Не старше часа
-                    new_events.append(event)
+                if not db.is_event_sent(user.id, event_id):
+                    # Проверяем, что событие еще не началось или началось недавно
+                    start_time = event.begin.datetime
+                    now = datetime.now()
+                    from datetime import timezone
+                    if start_time.tzinfo is None:
+                        start_time = start_time.replace(tzinfo=timezone.utc)
+                    if now.tzinfo is None:
+                        now = now.replace(tzinfo=timezone.utc)
+                    time_diff = start_time - now
+                    if time_diff.total_seconds() > -3600:  # Не старше часа
+                        new_events.append(event)
         
         # Отправляем новые события
         for event in new_events:
