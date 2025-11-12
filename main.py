@@ -484,7 +484,6 @@ def main():
                 ],
             },
             fallbacks=[CommandHandler("cancel", cancel)],
-            per_message=True,  # Отслеживать каждое сообщение
         )
         
         # Регистрируем обработчики (важен порядок - команды до conversation)
