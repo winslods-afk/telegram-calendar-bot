@@ -210,6 +210,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик нажатий на кнопки"""
     query = update.callback_query
+    if not query:
+        logger.warning("button_callback вызван без callback_query")
+        return ConversationHandler.END
+    
+    logger.info(f"Обработка callback: {query.data}")
     await query.answer()
     chat_id = query.from_user.id
     
@@ -233,7 +238,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(instruction_text, reply_markup=reply_markup)
-        return ConversationState.WAIT_USERNAME
+        return ConversationState.ASK_CALENDAR
     
     elif query.data == "no_calendar":
         await query.edit_message_text(
@@ -250,6 +255,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationState.WAIT_USERNAME
     
     elif query.data == "provide_data":
+        logger.info("Пользователь нажал 'Предоставить данные', переходим в WAIT_USERNAME")
         await query.edit_message_text(
             "Отлично! Начнем настройку.\n\n"
             "Пожалуйста, отправьте ваш Apple ID (email):"
@@ -474,7 +480,7 @@ def main():
             ],
             states={
                 ConversationState.ASK_CALENDAR: [
-                    CallbackQueryHandler(button_callback, pattern="^(yes_calendar|no_calendar|update_data|provide_data)$")
+                    CallbackQueryHandler(button_callback, pattern="^(provide_data|yes_calendar|no_calendar|update_data)$")
                 ],
                 ConversationState.WAIT_USERNAME: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, receive_username)
