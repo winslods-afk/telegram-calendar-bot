@@ -560,18 +560,18 @@ async def check_events_for_user(user: User, application: Application):
             event_id = CalendarService.get_event_id(event)
             
             # Проверяем, было ли событие уже отправлено
-                if not db.is_event_sent(user.id, event_id):
-                    # Проверяем, что событие еще не началось или началось недавно
-                    start_time = event.begin.datetime
-                    now = datetime.now()
-                    from datetime import timezone
-                    if start_time.tzinfo is None:
-                        start_time = start_time.replace(tzinfo=timezone.utc)
-                    if now.tzinfo is None:
-                        now = now.replace(tzinfo=timezone.utc)
-                    time_diff = start_time - now
-                    if time_diff.total_seconds() > -3600:  # Не старше часа
-                        new_events.append(event)
+            if not db.is_event_sent(user.id, event_id):
+                # Проверяем, что событие еще не началось или началось недавно
+                start_time = event.begin.datetime
+                now = datetime.now()
+                from datetime import timezone
+                if start_time.tzinfo is None:
+                    start_time = start_time.replace(tzinfo=timezone.utc)
+                if now.tzinfo is None:
+                    now = now.replace(tzinfo=timezone.utc)
+                time_diff = start_time - now
+                if time_diff.total_seconds() > -3600:  # Не старше часа
+                    new_events.append(event)
         
         # Отправляем новые события
         for event in new_events:
