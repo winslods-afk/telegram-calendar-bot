@@ -68,8 +68,39 @@ class CalendarService:
             if not calendars:
                 raise ValueError("Не найдено календарей в аккаунте")
             
-            # Используем первый доступный календарь
-            calendar = calendars[0]
+            # Логируем все доступные календари
+            logger.info(f"Найдено календарей: {len(calendars)}")
+            for cal in calendars:
+                logger.info(f"  - {cal.name}")
+            
+            # Пропускаем календарь "Напоминания" и ищем основной календарь
+            calendar = None
+            for cal in calendars:
+                cal_name_lower = cal.name.lower()
+                # Пропускаем календари с напоминаниями
+                if 'напоминания' in cal_name_lower or 'reminders' in cal_name_lower:
+                    logger.debug(f"Пропускаем календарь: {cal.name}")
+                    continue
+                # Предпочитаем календари с названиями типа "Календарь", "Calendar", "Home" и т.д.
+                if any(keyword in cal_name_lower for keyword in ['календарь', 'calendar', 'home', 'личный', 'personal']):
+                    calendar = cal
+                    logger.info(f"Выбран основной календарь: {calendar.name}")
+                    break
+            
+            # Если не нашли подходящий, берем первый не-напоминания
+            if not calendar:
+                for cal in calendars:
+                    cal_name_lower = cal.name.lower()
+                    if 'напоминания' not in cal_name_lower and 'reminders' not in cal_name_lower:
+                        calendar = cal
+                        logger.info(f"Выбран календарь: {calendar.name}")
+                        break
+            
+            # Если все еще не нашли, берем первый
+            if not calendar:
+                calendar = calendars[0]
+                logger.warning(f"Используется первый доступный календарь: {calendar.name}")
+            
             logger.info(f"Успешно подключено к календарю: {calendar.name}")
             return client, calendar
             
@@ -84,33 +115,46 @@ class CalendarService:
             now = datetime.now()
             end_date = now + timedelta(days=days_ahead)
             
+            logger.debug(f"Поиск событий с {now} по {end_date}")
+            
             # Получаем события из календаря
+            # Используем date() для правильного формата даты
             events = calendar.search(
-                start=now,
-                end=end_date,
+                start=now.date(),
+                end=end_date.date(),
                 event=True
             )
             
+            logger.debug(f"Получено {len(events)} событий из календаря")
+            
             parsed_events = []
-            for event in events:
+            for idx, event in enumerate(events):
                 try:
                     # Парсим событие из iCalendar формата
                     ics_data = event.data
+                    if not ics_data:
+                        logger.warning(f"Событие {idx} не содержит данных")
+                        continue
+                    
                     calendar_obj = Calendar(ics_data)
                     for ics_event in calendar_obj.events:
-                        parsed_events.append(ics_event)
+                        # Проверяем, что событие в нужном диапазоне дат
+                        event_start = ics_event.begin.datetime
+                        if event_start >= now and event_start <= end_date:
+                            parsed_events.append(ics_event)
+                            logger.debug(f"Добавлено событие: {ics_event.name} на {event_start}")
                 except Exception as e:
-                    logger.warning(f"Ошибка при парсинге события: {e}")
+                    logger.warning(f"Ошибка при парсинге события {idx}: {e}")
                     continue
             
             # Сортируем по времени начала
             parsed_events.sort(key=lambda x: x.begin.datetime)
-            logger.info(f"Найдено {len(parsed_events)} событий на ближайшие {days_ahead} дней")
+            logger.info(f"Найдено {len(parsed_events)} событий на ближайшие {days_ahead} дней в календаре '{calendar.name}'")
             
             return parsed_events
             
         except Exception as e:
-            logger.error(f"Ошибка при получении событий: {e}")
+            logger.error(f"Ошибка при получении событий: {e}", exc_info=True)
             return []
     
     @staticmethod
