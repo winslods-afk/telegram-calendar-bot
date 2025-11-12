@@ -138,7 +138,7 @@ class CalendarService:
                     # Пробуем получить все события и фильтровать вручную
                     events = calendar.events()
             
-            logger.debug(f"Получено {len(events)} событий из календаря '{calendar.name}'")
+            logger.info(f"Получено {len(events)} сырых событий из календаря '{calendar.name}'")
             
             parsed_events = []
             for idx, event in enumerate(events):
@@ -150,6 +150,7 @@ class CalendarService:
                         continue
                     
                     calendar_obj = Calendar(ics_data)
+                    logger.debug(f"Парсинг календаря {idx}, найдено {len(calendar_obj.events)} событий в iCalendar")
                     for ics_event in calendar_obj.events:
                         try:
                             # Проверяем, что событие в нужном диапазоне дат
@@ -177,9 +178,11 @@ class CalendarService:
                             # Сравниваем даты
                             if event_start >= now_tz and event_start <= end_date_tz:
                                 parsed_events.append(ics_event)
-                                logger.debug(f"Добавлено событие: {ics_event.name} на {event_start}")
+                                logger.info(f"✓ Добавлено событие: '{ics_event.name}' на {event_start}")
+                            else:
+                                logger.debug(f"✗ Событие '{ics_event.name}' на {event_start} вне диапазона ({now_tz} - {end_date_tz})")
                         except Exception as e:
-                            logger.warning(f"Ошибка при обработке события {ics_event.name}: {e}")
+                            logger.warning(f"Ошибка при обработке события '{ics_event.name if hasattr(ics_event, 'name') else 'unknown'}': {e}", exc_info=True)
                             continue
                 except Exception as e:
                     logger.warning(f"Ошибка при парсинге события {idx}: {e}")
