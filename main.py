@@ -22,8 +22,6 @@ from telegram.ext import (
     MessageHandler,
     filters
 )
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger
 from ics import Calendar, Event as ICSEvent
 
 from database import Database, User
@@ -455,6 +453,8 @@ async def check_events_job(context: ContextTypes.DEFAULT_TYPE):
     # Проверяем события для каждого пользователя
     for user in users:
         await check_events_for_user(user, context.application)
+    
+    logger.info(f"Проверка событий завершена для {len(users)} пользователей")
 
 
 def main():
@@ -491,20 +491,22 @@ def main():
         application.add_handler(CallbackQueryHandler(next_events_callback, pattern="^next_events$"))
         application.add_handler(conv_handler)
         
-        # Настраиваем планировщик для периодической проверки
+        # Настраиваем периодическую проверку через встроенный job_queue
         check_interval = int(os.getenv('CHECK_INTERVAL_MINUTES', '60'))
-        scheduler = AsyncIOScheduler()
-        scheduler.add_job(
-            check_events_job,
-            trigger=IntervalTrigger(minutes=check_interval),
-            args=[application],
-            id='check_events',
-            replace_existing=True
-        )
         
-        # Запускаем планировщик
-        scheduler.start()
-        logger.info(f"Планировщик запущен. Проверка каждые {check_interval} минут.")
+        async def post_init(application: Application) -> None:
+            """Инициализация после запуска бота"""
+            # Запускаем периодическую проверку событий
+            application.job_queue.run_repeating(
+                check_events_job,
+                interval=check_interval * 60,  # в секундах
+                first=10,  # Первый запуск через 10 секунд
+                name='check_events'
+            )
+            logger.info(f"Планировщик запущен. Проверка каждые {check_interval} минут.")
+        
+        # Устанавливаем post_init callback
+        application.post_init = post_init
         
         # Запускаем бота
         logger.info("Бот запущен и готов к работе!")
